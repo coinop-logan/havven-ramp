@@ -1,8 +1,6 @@
-// A HavvenrampBurnablePayment is a modification of the BurnablePayment contract, with two main differences:
+// A HavvenrampBurnablePayment is a modification of the BurnablePayment contract.
 //
-// First, it adds in support for ERC20 tokens.
-//
-// Second, it replaces the worker-called "Commit" function with the payer-called "ApproveWorker" function.
+// This version replaces the worker-called "Commit" function with the payer-called "ApproveWorker" function.
 // This allows a user without ETH to be registered/approved as the recipient,
 // and assumes such a user has a way of contacting the payer to request said registration.
 //
@@ -11,74 +9,31 @@
 
 pragma solidity ^ 0.4.23;
 
-contract ERC20Interface {
-    function totalSupply() public constant returns (uint);
-    function balanceOf(address tokenOwner) public constant returns (uint balance);
-    function allowance(address tokenOwner, address spender) public constant returns (uint remaining);
-    function transfer(address to, uint tokens) public returns (bool success);
-    function approve(address spender, uint tokens) public returns (bool success);
-    function transferFrom(address from, address to, uint tokens) public returns (bool success);
-
-    event Transfer(address indexed from, address indexed to, uint tokens);
-    event Approval(address indexed tokenOwner, address indexed spender, uint tokens);
-}
-
 contract HavvenrampBurnablePaymentFactory {
     event NewHBP(
         address indexed bpAddress,
-        address tokenManager,
-        uint deposited,
         address payer,
+        uint deposited,
         uint autoreleaseInterval,
         string title,
         string initialStatement
     );
 
-    function newEtherHBP(address payer, uint autoreleaseInterval, string title, string initialStatement)
+    function newHBP(address payer, uint autoreleaseInterval, string title, string initialStatement)
     external
     payable
     returns (address)
     {
-        emit NewHBP(newHBPAddress, address(0x0), msg.value, payer, autoreleaseInterval, title, initialStatement);
+        emit NewHBP(newHBPAddr, payer, msg.value, autoreleaseInterval, title, initialStatement);
 
         //pass along any ether to the constructor
-        address newHBPAddress = (new HavvenrampBurnablePayment).value(msg.value)(address(0x0), payer, autoreleaseInterval, title, initialStatement);
+        address newHBPAddr = (new HavvenrampBurnablePayment).value(msg.value)(payer, autoreleaseInterval, title, initialStatement);
 
-        return newHBPAddress;
-    }
-
-    //Previous to this call, the token's "approve" method should have been called for the Factory address.
-    function newTokenHBP(address tokenManagerAddress, uint tokenAmount, address payer, uint autoreleaseInterval, string title, string initialStatement)
-    external
-    returns (address)
-    {
-        emit NewHBP(newHBPAddress, tokenManagerAddress, tokenAmount, payer, autoreleaseInterval, title, initialStatement);
-
-        address newHBPAddress = new HavvenrampBurnablePayment(tokenManagerAddress, payer, autoreleaseInterval, title, initialStatement);
-
-        //Now transfer tokens to the HBP address
-        ERC20Interface tokenManagerContract = ERC20Interface(tokenManagerAddress);
-        tokenManagerContract.transferFrom(msg.sender, newHBPAddress, tokenAmount);
-
-        // We assumed above that the tokens are coming from msg.sender, since msg.sender is signing this transaction anyway.
-        // We could have instead assumed that payer is supplying the tokens, but this would require two separate signatures from the client:
-        // one from msg.sender (to generate this tx) and another from payer, to call the approve method.
-
-        return newHBPAddress;
+        return newHBPAddr;
     }
 }
 
 contract HavvenrampBurnablePayment {
-    //If it's a token HBP, it will have a token manager address (if not, this will be set to 0x0)
-    ERC20Interface tokenManager;
-
-    function isTokenHBP()
-    public
-    constant
-    returns (bool) {
-        return (address(tokenManager) != address(0x0));
-    }
-
     //title will never change
     string public title;
 
@@ -88,12 +43,13 @@ contract HavvenrampBurnablePayment {
 
     address constant BURN_ADDRESS = 0x0;
 
-    //these two variables track the relevant totals, but don't affect HBP logic
-    uint amountBurned;
-    uint amountReleased;
-
     //Set to true if fundsRecovered is called (offers another method of detecting recalled HBPs)
     bool recovered = false;
+
+    //Note that these will track, but not influence the HBP logic.
+    uint public amountDeposited;
+    uint public amountBurned;
+    uint public amountReleased;
 
     //How long should we wait before allowing the default release to be called?
     uint public autoreleaseInterval;
@@ -123,62 +79,52 @@ contract HavvenrampBurnablePayment {
         _;
     }
 
+    event Created(address indexed contractAddress, address payer, uint autoreleaseInterval, string title);
+    event FundsAdded(uint amount); //The payer has added funds to the HBP.
     event PayerStatement(string statement);
     event FundsRecovered();
+    event RecipientApproved(address recipient);
+    event FundsBurned(uint amount);
+    event FundsReleased(uint amount);
+    event Closed();
+    event Unclosed();
+    event AutoreleaseDelayed();
+    event AutoreleaseTriggered();
 
-    constructor(address tokenManagerAddress, address _payer, uint _autoreleaseInterval, string _title, string initialStatement)
+    constructor(address _payer, uint _autoreleaseInterval, string _title, string initialStatement)
     public
     payable
     {
-        if (tokenManagerAddress != address(0x0)) {
-            tokenManager = ERC20Interface(tokenManagerAddress);
-        }
+        emit Created(this, payer, autoreleaseInterval, title);
+
         payer = _payer;
         title = _title;
         state = State.Open;
         autoreleaseInterval = _autoreleaseInterval;
 
-        require( !(isTokenHBP() && msg.value > 0), "Cannot create HBP with both ether and an ERC20 token manager address.");
-
-        emit PayerStatement(initialStatement);
-    }
-
-    function getBalance()
-    public
-    constant
-    returns (uint)
-    {
-        if (isTokenHBP()) {
-            return tokenManager.balanceOf(address(this));
+        if (msg.value > 0) {
+            emit FundsAdded(msg.value);
+            amountDeposited += msg.value;
         }
-        else {
-            return address(this).balance;
+
+        if (bytes(initialStatement).length > 0) {
+            emit PayerStatement(initialStatement);
         }
     }
 
-    function addEther()
+    function addFunds()
     external
     payable
     onlyPayer()
     {
-        require(!isTokenHBP());
         require(msg.value > 0);
 
+        emit FundsAdded(msg.value);
+
+        amountDeposited += msg.value;
         if (state == State.Closed) {
             state = State.Committed;
-        }
-    }
-
-    function addTokens(uint amount)
-    external
-    onlyPayer()
-    {
-        require(isTokenHBP());
-
-        tokenManager.transferFrom(msg.sender, address(this), amount);
-
-        if (state == State.Closed) {
-            state == State.Committed;
+            emit Unclosed();
         }
     }
 
@@ -190,9 +136,6 @@ contract HavvenrampBurnablePayment {
         recovered = true;
         emit FundsRecovered();
 
-        if (isTokenHBP()) {
-            tokenManager.transfer(payer, tokenManager.balanceOf(address(this)));
-        }
         selfdestruct(payer);
     }
 
@@ -206,23 +149,22 @@ contract HavvenrampBurnablePayment {
 
         state = State.Committed;
 
+        emit RecipientApproved(recipient);
+
         autoreleaseTime = now + autoreleaseInterval;
     }
 
     function internalBurn(uint amount)
     internal
     {
-        if (isTokenHBP()) {
-            tokenManager.transfer(BURN_ADDRESS, amount);
-        }
-        else {
-            BURN_ADDRESS.transfer(amount);
-        }
+        BURN_ADDRESS.transfer(amount);
 
         amountBurned += amount;
+        emit FundsBurned(amount);
 
-        if (getBalance() == 0) {
+        if (address(this).balance == 0) {
             state = State.Closed;
+            emit Closed();
         }
     }
 
@@ -237,17 +179,14 @@ contract HavvenrampBurnablePayment {
     function internalRelease(uint amount)
     internal
     {
-        if (isTokenHBP()) {
-            tokenManager.transfer(recipient, amount);
-        }
-        else {
-            recipient.transfer(amount);
-        }
+        recipient.transfer(amount);
 
         amountReleased += amount;
+        emit FundsReleased(amount);
 
         if (address(this).balance == 0) {
             state = State.Closed;
+            emit Closed();
         }
     }
 
@@ -272,6 +211,7 @@ contract HavvenrampBurnablePayment {
     inState(State.Committed)
     {
         autoreleaseTime = now + autoreleaseInterval;
+        emit AutoreleaseDelayed();
     }
 
     function triggerAutorelease()
@@ -280,13 +220,14 @@ contract HavvenrampBurnablePayment {
     {
         require(now >= autoreleaseTime);
 
-        internalRelease(getBalance());
+        emit AutoreleaseTriggered();
+        internalRelease(address(this).balance);
     }
 
     function getFullState()
     external
     constant
-    returns(address, State, address, address, string, uint, uint, uint, uint, uint) {
-        return (address(tokenManager), state, payer, recipient, title, getBalance(), amountBurned, amountReleased, autoreleaseInterval, autoreleaseTime);
+    returns(State, address, address, string, uint, uint, uint, uint, uint, uint) {
+        return (state, payer, recipient, title, address(this).balance, amountDeposited, amountBurned, amountReleased, autoreleaseInterval, autoreleaseTime);
     }
 }
