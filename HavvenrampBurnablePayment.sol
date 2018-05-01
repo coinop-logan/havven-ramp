@@ -24,10 +24,10 @@ contract HavvenrampBurnablePaymentFactory {
     payable
     returns (address)
     {
-        emit NewHBP(newHBPAddr, payer, msg.value, autoreleaseInterval, title, initialStatement);
-
         //pass along any ether to the constructor
         address newHBPAddr = (new HavvenrampBurnablePayment).value(msg.value)(payer, autoreleaseInterval, title, initialStatement);
+
+        emit NewHBP(newHBPAddr, payer, msg.value, autoreleaseInterval, title, initialStatement);
 
         return newHBPAddr;
     }
