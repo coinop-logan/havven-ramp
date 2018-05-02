@@ -1,0 +1,47 @@
+<script>
+  window.onload = function() {
+    prepareWeb3();
+  }
+
+  function prepareWeb3() {
+    if (typeof web3 !== "undefined") {
+      // Use Mist/MetaMask's provider
+      window.web3 = new Web3(web3.currentProvider);
+    } else {
+      console.log("No web3? You should consider trying MetaMask!");
+    }
+
+    //Load Factory contract
+    window.HBPFactoryInstance = web3.eth.contract(window.HBPFactoryABI).at(window.HBPFactoryAddress);
+  }
+
+  function createOffer(etherAmount, fiatType, feePercentage, extraInfo, approvalRequirements) {
+    //First, get user account to use as payer
+    var payer;
+    if (!web3.eth.accounts) {
+      alert("No user address found. Make sure Metamask is installed and unlocked, then refresh.");
+    }
+    else {
+      payer = web3.eth.accounts[0];
+    }
+
+    var title = "HavvenrampCurrencyTrade";
+    var initialStatement = JSON.stringify([fiatType, feePercentage, extraInfo, approvalRequirements]);
+    var autoreleaseInterval = 60*60*24*7; // One week
+
+    console.log(payer, autoreleaseInterval, title, initialStatement);
+
+    HBPFactoryInstance.newHBP(payer, autoreleaseInterval, title, initialStatement, {value:web3.toWei(etherAmount, 'ether'), gasPrice:20000000000}, function(err, res) {
+      if (err) console.log("Error when calling newEtherHBP: " + err);
+      else {
+        console.log("transaction broadcast: " + res);
+      }
+    });
+  }
+
+  window.HBPFactoryAddress = "0xD6551Fa45b3dcf6225D4F2cd4edE9651d26e563f";
+
+  window.HBPFactoryABI = [{"constant":false,"inputs":[{"name":"payer","type":"address"},{"name":"autoreleaseInterval","type":"uint256"},{"name":"title","type":"string"},{"name":"initialStatement","type":"string"}],"name":"newHBP","outputs":[{"name":"","type":"address"}],"payable":true,"stateMutability":"payable","type":"function"},{"anonymous":false,"inputs":[{"indexed":true,"name":"bpAddress","type":"address"},{"indexed":false,"name":"payer","type":"address"},{"indexed":false,"name":"deposited","type":"uint256"},{"indexed":false,"name":"autoreleaseInterval","type":"uint256"},{"indexed":false,"name":"title","type":"string"},{"indexed":false,"name":"initialStatement","type":"string"}],"name":"NewHBP","type":"event"}];
+
+  window.HBPABI = [ { "constant": true, "inputs": [], "name": "payer", "outputs": [ { "name": "", "type": "address" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": false, "inputs": [], "name": "delayAutorelease", "outputs": [], "payable": false, "stateMutability": "nonpayable", "type": "function" }, { "constant": false, "inputs": [ { "name": "amount", "type": "uint256" } ], "name": "release", "outputs": [], "payable": false, "stateMutability": "nonpayable", "type": "function" }, { "constant": false, "inputs": [ { "name": "amount", "type": "uint256" } ], "name": "burn", "outputs": [], "payable": false, "stateMutability": "nonpayable", "type": "function" }, { "constant": true, "inputs": [], "name": "title", "outputs": [ { "name": "", "type": "string" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "amountBurned", "outputs": [ { "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "recipient", "outputs": [ { "name": "", "type": "address" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "autoreleaseInterval", "outputs": [ { "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": false, "inputs": [ { "name": "statement", "type": "string" } ], "name": "logPayerStatement", "outputs": [], "payable": false, "stateMutability": "nonpayable", "type": "function" }, { "constant": false, "inputs": [ { "name": "_recipient", "type": "address" } ], "name": "approveRecipient", "outputs": [], "payable": true, "stateMutability": "payable", "type": "function" }, { "constant": false, "inputs": [], "name": "triggerAutorelease", "outputs": [], "payable": false, "stateMutability": "nonpayable", "type": "function" }, { "constant": true, "inputs": [], "name": "getFullState", "outputs": [ { "name": "", "type": "uint8" }, { "name": "", "type": "address" }, { "name": "", "type": "address" }, { "name": "", "type": "string" }, { "name": "", "type": "uint256" }, { "name": "", "type": "uint256" }, { "name": "", "type": "uint256" }, { "name": "", "type": "uint256" }, { "name": "", "type": "uint256" }, { "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": false, "inputs": [], "name": "addFunds", "outputs": [], "payable": true, "stateMutability": "payable", "type": "function" }, { "constant": false, "inputs": [], "name": "recoverFunds", "outputs": [], "payable": false, "stateMutability": "nonpayable", "type": "function" }, { "constant": true, "inputs": [], "name": "autoreleaseTime", "outputs": [ { "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "state", "outputs": [ { "name": "", "type": "uint8" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "amountReleased", "outputs": [ { "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "amountDeposited", "outputs": [ { "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "inputs": [ { "name": "_payer", "type": "address" }, { "name": "_autoreleaseInterval", "type": "uint256" }, { "name": "_title", "type": "string" }, { "name": "initialStatement", "type": "string" } ], "payable": true, "stateMutability": "payable", "type": "constructor" }, { "anonymous": false, "inputs": [ { "indexed": true, "name": "contractAddress", "type": "address" }, { "indexed": false, "name": "payer", "type": "address" }, { "indexed": false, "name": "autoreleaseInterval", "type": "uint256" }, { "indexed": false, "name": "title", "type": "string" } ], "name": "Created", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "name": "amount", "type": "uint256" } ], "name": "FundsAdded", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "name": "statement", "type": "string" } ], "name": "PayerStatement", "type": "event" }, { "anonymous": false, "inputs": [], "name": "FundsRecovered", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "name": "recipient", "type": "address" } ], "name": "RecipientApproved", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "name": "amount", "type": "uint256" } ], "name": "FundsBurned", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "name": "amount", "type": "uint256" } ], "name": "FundsReleased", "type": "event" }, { "anonymous": false, "inputs": [], "name": "Closed", "type": "event" }, { "anonymous": false, "inputs": [], "name": "Unclosed", "type": "event" }, { "anonymous": false, "inputs": [], "name": "AutoreleaseDelayed", "type": "event" }, { "anonymous": false, "inputs": [], "name": "AutoreleaseTriggered", "type": "event" } ];
+</script>
